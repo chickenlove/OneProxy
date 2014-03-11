@@ -2,21 +2,24 @@
 -- Data Server Groups
 -- Every Data Server Has Master-Master Structure with Semisync Enabled for Failsafe
 --
-local server_groups=
-	{
-		default={
-				{addr="192.168.1.139:3306", backend=-1}
-			},
-                data1={
-				{addr="192.168.1.139:3306", backend=-1}
-                      }
-	}
+if proxy.global.config.server_groups == nil then
+	proxy.global.config.server_groups=
+		{
+			default={
+				{addr="10.15.1.22:3306", backend=-1}
+				},
+                	data1={
+				{addr="10.15.1.42:3306", backend=-1}
+                      	}
+		}
+end
 
 --
 -- Fined Server Group by Table Name When No Partition Key Value Specified
 -- Used For Management Works
 --
-local table_server_mapping={
+if proxy.global.config.table_server_mapping == nil then
+	proxy.global.config.table_server_mapping={
 		my_test1_0="data1",
 		my_test1_1="data1",
 		my_test1_2="data1",
@@ -32,12 +35,14 @@ local table_server_mapping={
                 my_test3_3="data1",
                 my_test3_4="data1",
 	}
+end
 --
 -- Fined Server Group by Table and  Partition Key Value
 -- Four Partition Methods Supported: range, list, random, hash
 -- Notes: partitions should be ordered accored to values for range partition
 --
-local table_partition_mapping={
+if proxy.global.config.table_partition_mapping == nil then
+	proxy.global.config.table_partition_mapping={
                 my_test1={
 			col="id", 
 			coltype="int",
@@ -75,7 +80,7 @@ local table_partition_mapping={
                         }
 		}
         }
-
+end
 --
 -- Get the backend index accord to the address (ip:port) information
 --
@@ -93,7 +98,7 @@ end
 -- Set Proxy Backend Index by Data Group Name
 -- 
 function choose_server_group(grpname)
-	local srvgrp = server_groups[grpname]
+	local srvgrp = proxy.global.config.server_groups[grpname]
 	local choosed_backend = 0
 	if srvgrp then
 		for i = 1 , #srvgrp do
@@ -116,7 +121,7 @@ end
 -- Set Proxy Backend Index by Table Name 
 --
 function choose_server_by_table(tabname)
-	if table_server_mapping[tabname] then
+	if proxy.global.config.table_server_mapping[tabname] then
 		return choose_server_group(table_server_mapping[tabname])
 	end
 	return 0
@@ -167,7 +172,7 @@ function choose_server_by_parser()
 	local tablist=parser:tables()
 	local is_partition_table = 0
 	for tndx = 1 , #tablist do
-		local part = table_partition_mapping[tablist[tndx]]	
+		local part = proxy.global.config.table_partition_mapping[tablist[tndx]]	
 		if part then
 			is_partition_table = 1
 			break
@@ -175,7 +180,7 @@ function choose_server_by_parser()
 	end
 	if is_partition_table == 1 then
 	    for tndx = 1 , #tablist do
-		local part = table_partition_mapping[tablist[tndx]]
+		local part = proxy.global.config.table_partition_mapping[tablist[tndx]]
 		if part then
 			local partitions = part.partitions
 			if part["mode"] == "range" then
@@ -197,16 +202,16 @@ function choose_server_by_parser()
 						end
 					end
 				end
-                                if choosed_count == 1 and part_key_index > 0 then
-                                        if partitions[part_key_index].name then
-                                                parser:rename(tndx, partitions[part_key_index].name)
-                                        end
+	                        if choosed_count == 1 and part_key_index > 0 then
+        	                        if partitions[part_key_index].name then
+                	                        parser:rename(tndx, partitions[part_key_index].name)
+                        	        end
                                         if choosed_backend == 0 then
-                                                if partitions[part_key_index].server then
-                                                        choosed_backend = choose_server_group(partitions[part_key_index].server)
-                                                else
-                                                        choosed_backend = choose_server_by_table(partitions[part_key_index].name)
-                                                end
+                                       	        if partitions[part_key_index].server then
+                                               	        choosed_backend = choose_server_group(partitions[part_key_index].server)
+	                                        else
+                                                      	choosed_backend = choose_server_by_table(partitions[part_key_index].name)
+        	                                end
                                         end
                                 end
 			elseif part["mode"] == "list" then
@@ -259,9 +264,9 @@ function choose_server_by_parser()
 	else
  	    local choosed_daga_group = nil
  	    for tndx = 1 , #tablist do
-		if table_server_mapping[tablist[tndx]] then
+		if proxy.global.config.table_server_mapping[tablist[tndx]] then
 			if choosed_daga_group == nil then
-				choosed_daga_group = table_server_mapping[tablist[tndx]]
+				choosed_daga_group = proxy.global.config.table_server_mapping[tablist[tndx]]
 				choosed_count  = choosed_count + 1
 			else
 				if choosed_daga_group ~= table_server_mapping[tablist[tndx]] then
@@ -272,7 +277,7 @@ function choose_server_by_parser()
 	    end
 	    if  choosed_daga_group then
 		if choosed_count == 1 then
-			choosed_backend = choose_server_by_table(tablist[tndx]) 
+			choosed_backend = choose_server_group(choosed_daga_group) 
 		end
   	    end
 	end
@@ -330,6 +335,4 @@ function rewrite_query( packet )
         end
 	return proxy.PROXY_SEND_QUERY
 end
-
-
 
