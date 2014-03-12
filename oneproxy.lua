@@ -6,10 +6,10 @@ if proxy.global.config.server_groups == nil then
 	proxy.global.config.server_groups=
 	{
 		default={
-				{addr="192.168.1.139:3306", backend=-1}
+				{addr="10.15.1.22:3306", backend=-1}
 			},
                 data1={
-				{addr="192.168.1.139:3306", backend=-1}
+				{addr="10.15.1.42:3306", backend=-1}
                       }
 	}
 end
@@ -189,17 +189,53 @@ function choose_server_by_parser()
 			local partitions = part.partitions
 			if part["mode"] == "range" then
 				local part_key_values = parser:values(tndx, part["col"])
-				for vndx = 1, #part_key_values do
-					local pkey_value = nil
-					if part["coltype"] == "int" then
-						pkey_value = tonumber(part_key_values[vndx])
-					else
-						pkey_value = part_key_values[vndx]
+				if #part_key_values > 0 then
+					for vndx = 1, #part_key_values do
+						local pkey_value = nil
+						if part["coltype"] == "int" then
+							pkey_value = tonumber(part_key_values[vndx])
+						else
+							pkey_value = part_key_values[vndx]
+						end
+						part_key_index = get_range_partition(pkey_value, partitions)
+						if part_key_index > 0 then
+							if part_key_indexes[part_key_index] == nil then
+								choosed_count = choosed_count + 1
+							end
+							part_key_indexes[part_key_index] = part_key_index
+						end
 					end
-					part_key_index = get_range_partition(pkey_value, partitions)
-					if part_key_index > 0 then
-						part_key_indexes[part_key_index] = part_key_index
-						choosed_count = choosed_count + 1
+				else
+					local min_key_value = parser:minvalue()
+					local max_key_value = parser:maxvalue()
+					if part["coltype"] == "int" then
+						if min_key_value then
+							min_key_value = tonumber(min_key_value)
+						end
+						if max_key_value then
+							max_key_value = tonumber(max_key_value)
+						end
+					end
+					if min_key_value ~= nil or max_key_value ~= nil then
+					        for pndx = 1, #partitions do
+							if min_key_value == nil then
+					                	if  (partitions[pndx].minval == nil or max_key_value >= partitions[pndx].minval) then
+				                                	part_key_indexes[pndx] = pndx
+									choosed_count = choosed_count + 1
+								end
+							elseif max_key_value == nil then
+                                                                if  (partitions[pndx].maxval == nil or min_key_value < partitions[pndx].maxval) then
+                                                                        part_key_indexes[pndx] = pndx
+                                                                        choosed_count = choosed_count + 1
+                                                                end
+							else
+								if  (partitions[pndx].minval == nil or min_key_value >= partitions[pndx].minval) or
+									(partitions[pndx].maxval == nil or min_key_value < partitions[pndx].maxval) then
+									part_key_indexes[pndx] = pndx
+									choosed_count = choosed_count + 1
+								end
+					                end
+					        end
 					end
 				end
 				if choosed_count > 0 and (first_token == "select" or choosed_count == 1) then
@@ -224,16 +260,56 @@ function choose_server_by_parser()
 				end	
 			elseif part["mode"] == "list" then
 				local part_key_values = parser:values(tndx, part["col"])
-                                for vndx = 1, #part_key_values do
+				if #part_key_values > 0 then
+	                                for vndx = 1, #part_key_values do
+        	                                if part["coltype"] == "int" then
+                	                                pkey_value = tonumber(part_key_values[vndx])
+                        	                else
+                                	                pkey_value = part_key_values[vndx]
+                                        	end
+						part_key_index = get_list_partition(pkey_value, partitions)
+						if part_key_index > 0 then
+							if part_key_indexes[part_key_index] == nil then
+								choosed_count = choosed_count + 1
+							end
+							part_key_indexes[part_key_index] = part_key_index
+						end
+					end
+				else
+                                        local min_key_value = parser:minvalue()
+                                        local max_key_value = parser:maxvalue()
                                         if part["coltype"] == "int" then
-                                                pkey_value = tonumber(part_key_values[vndx])
-                                        else
-                                                pkey_value = part_key_values[vndx]
+                                                if min_key_value then
+                                                        min_key_value = tonumber(min_key_value)
+                                                end
+                                                if max_key_value then
+                                                        max_key_value = tonumber(max_key_value)
+                                                end
                                         end
-					part_key_index = get_list_partition(pkey_value, partitions)
-					if part_key_index > 0 then
-						part_key_indexes[part_key_index] = part_key_index
-						choosed_count = choosed_count + 1
+					if min_key_value ~= nil or max_key_value ~= nil then		
+						for pndx = 1, #partitions do
+					                local partitions_values = partitions[pndx].values
+					                if partitions_values == nil then
+					                        if part_key_indexes[pndx] == nil then
+									choosed_count = choosed_count + 1
+								end
+								part_key_indexes[pndx] = pndx
+					                else
+								local in_key_range = 0
+			        		                for lvndx = 1, #partitions_values do
+			                        		        if (min_key_value == nill or partitions_values[lvndx] >= min_key_value) and
+										(max_key_value == nill or partitions_values[lvndx] <= max_key_value) then
+			                                		        in_key_range = 1
+									end
+				                                end
+								if in_key_range == 1 then
+									if part_key_indexes[pndx] == nil then
+										choosed_count = choosed_count + 1
+									end
+									part_key_indexes[pndx] = pndx
+								end
+				                        end
+				                end
 					end
 				end
                                 if choosed_count > 0 and (first_token == "select" or choosed_count == 1) then
