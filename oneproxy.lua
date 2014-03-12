@@ -161,6 +161,15 @@ function get_list_partition(pkey_value, partitions)
         return 0
 end
 
+--
+-- Get Nvl Function
+--
+function get_nvl(val, nilval)
+	if val then 
+		return val
+	end
+	return nilval
+end
 
 --
 -- Set Proxy Backend Index by Table Name and Partition Key Values
@@ -229,8 +238,8 @@ function choose_server_by_parser()
                                                                         choosed_count = choosed_count + 1
                                                                 end
 							else
-								if  (partitions[pndx].minval == nil or min_key_value >= partitions[pndx].minval) or
-									(partitions[pndx].maxval == nil or min_key_value < partitions[pndx].maxval) then
+								if get_nvl(partitions[pndx].maxval, min_key_value) >= min_key_value and
+								   get_nvl(partitions[pndx].minval, max_key_value) <= max_key_value then
 									part_key_indexes[pndx] = pndx
 									choosed_count = choosed_count + 1
 								end
