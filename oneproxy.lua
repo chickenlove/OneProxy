@@ -4,14 +4,14 @@
 --
 if proxy.global.config.server_groups == nil then
 	proxy.global.config.server_groups=
-		{
-			default={
-				{addr="10.15.1.22:3306", backend=-1}
-				},
-                	data1={
-				{addr="10.15.1.42:3306", backend=-1}
-                      	}
-		}
+	{
+		default={
+				{addr="192.168.1.139:3306", backend=-1}
+			},
+                data1={
+				{addr="192.168.1.139:3306", backend=-1}
+                      }
+	}
 end
 
 --
@@ -36,6 +36,7 @@ if proxy.global.config.table_server_mapping == nil then
                 my_test3_4="data1",
 	}
 end
+
 --
 -- Fined Server Group by Table and  Partition Key Value
 -- Four Partition Methods Supported: range, list, random, hash
@@ -81,6 +82,7 @@ if proxy.global.config.table_partition_mapping == nil then
 		}
         }
 end
+
 --
 -- Get the backend index accord to the address (ip:port) information
 --
@@ -122,7 +124,7 @@ end
 --
 function choose_server_by_table(tabname)
 	if proxy.global.config.table_server_mapping[tabname] then
-		return choose_server_group(table_server_mapping[tabname])
+		return choose_server_group(proxy.global.config.table_server_mapping[tabname])
 	end
 	return 0
 end
@@ -169,8 +171,10 @@ function choose_server_by_parser()
 	local choosed_count   = 0
 	local parser = proxy.sqlparser
 	local part_key_index  = 0
+	local part_key_indexes = {}
 	local tablist=parser:tables()
 	local is_partition_table = 0
+	local first_token = parser:tkname(1)
 	for tndx = 1 , #tablist do
 		local part = proxy.global.config.table_partition_mapping[tablist[tndx]]	
 		if part then
@@ -192,28 +196,32 @@ function choose_server_by_parser()
 					else
 						pkey_value = part_key_values[vndx]
 					end
-					if part_key_index == 0 then
-						part_key_index = get_range_partition(pkey_value, partitions)
+					part_key_index = get_range_partition(pkey_value, partitions)
+					if part_key_index > 0 then
+						part_key_indexes[part_key_index] = part_key_index
 						choosed_count = choosed_count + 1
-					else
-						local tmp_key_index = get_range_partition(pkey_value, partitions)
-						if tmp_key_index > 0 and part_key_index ~= tmp_key_index then
-							choosed_count = choosed_count + 1
-						end
 					end
 				end
-	                        if choosed_count == 1 and part_key_index > 0 then
-        	                        if partitions[part_key_index].name then
-                	                        parser:rename(tndx, partitions[part_key_index].name)
-                        	        end
-                                        if choosed_backend == 0 then
-                                       	        if partitions[part_key_index].server then
-                                               	        choosed_backend = choose_server_group(partitions[part_key_index].server)
-	                                        else
-                                                      	choosed_backend = choose_server_by_table(partitions[part_key_index].name)
-        	                                end
-                                        end
-                                end
+				if choosed_count > 0 and (first_token == "select" or choosed_count == 1) then
+					choosed_count = 1	
+					for key_indexes_v1, key_indexes_v2 in pairs(part_key_indexes) do
+						part_key_index = key_indexes_v2
+						if partitions[part_key_index].name then
+							parser:rename(tndx, partitions[part_key_index].name)
+						end
+						if partitions[part_key_index].server then
+							choosed_backend = choose_server_group(partitions[part_key_index].server)
+						else
+							choosed_backend = choose_server_by_table(partitions[part_key_index].name)
+						end		
+						if first_token == "select" then
+							proxy.queries:append(1, string.char(proxy.COM_QUERY) .. parser:rewrite(),
+										{backend_ndx=choosed_backend-1, cache_result=true})
+						else
+							proxy.queries:append(1, string.char(proxy.COM_QUERY) .. parser:rewrite())
+						end
+					end
+				end	
 			elseif part["mode"] == "list" then
 				local part_key_values = parser:values(tndx, part["col"])
                                 for vndx = 1, #part_key_values do
@@ -222,28 +230,32 @@ function choose_server_by_parser()
                                         else
                                                 pkey_value = part_key_values[vndx]
                                         end
-                                        if part_key_index == 0 then
-                                                part_key_index = get_list_partition(pkey_value, partitions)
+					part_key_index = get_list_partition(pkey_value, partitions)
+					if part_key_index > 0 then
+						part_key_indexes[part_key_index] = part_key_index
 						choosed_count = choosed_count + 1
-                                        else
-                                                local tmp_key_index = get_list_partition(pkey_value, partitions)
-                                                if tmp_key_index > 0 and part_key_index ~= tmp_key_index then
-                                                        choosed_count = choosed_count + 1
-                                                end
-                                        end
-				end
-                                if choosed_count == 1 and part_key_index > 0 then
-					if partitions[part_key_index].name then
-                                         	parser:rename(tndx, partitions[part_key_index].name)
 					end
-                                        if choosed_backend == 0 then
+				end
+                                if choosed_count > 0 and (first_token == "select" or choosed_count == 1) then
+                                        choosed_count = 1
+                                        for key_indexes_v1, key_indexes_v2 in pairs(part_key_indexes) do
+                                                part_key_index = key_indexes_v2
+                                                if partitions[part_key_index].name then
+                                                        parser:rename(tndx, partitions[part_key_index].name)
+                                                end
                                                 if partitions[part_key_index].server then
                                                         choosed_backend = choose_server_group(partitions[part_key_index].server)
                                                 else
                                                         choosed_backend = choose_server_by_table(partitions[part_key_index].name)
                                                 end
+                                                if first_token == "select" then
+                                                        proxy.queries:append(1, string.char(proxy.COM_QUERY) .. parser:rewrite(),
+										{backend_ndx=choosed_backend-1, cache_result=true})
+                                                else
+                                                        proxy.queries:append(1, string.char(proxy.COM_QUERY) .. parser:rewrite())
+                                                end
                                         end
-				end
+                                end
 			elseif part["mode"] == "random" then
 				if part_key_index == 0 then
 					math.randomseed(os.time())
@@ -258,6 +270,7 @@ function choose_server_by_parser()
                                 else
                                         choosed_backend = choose_server_by_table(partitions[part_key_index].name)
                                 end
+				proxy.queries:append(1, string.char(proxy.COM_QUERY) .. parser:rewrite())
 			end
 		end
 	    end
@@ -269,7 +282,7 @@ function choose_server_by_parser()
 				choosed_daga_group = proxy.global.config.table_server_mapping[tablist[tndx]]
 				choosed_count  = choosed_count + 1
 			else
-				if choosed_daga_group ~= table_server_mapping[tablist[tndx]] then
+				if choosed_daga_group ~= proxy.global.config.table_server_mapping[tablist[tndx]] then
 					choosed_count  = choosed_count + 1
 				end
 			end
@@ -296,10 +309,7 @@ function rewrite_query( packet )
 		choosed_backend, choosed_count, is_partition_table = choose_server_by_parser()
 		if is_partition_table == 1 then
 			if choosed_count == 1 then
-				if choosed_backend > 0 then
-					proxy.queries:append(1, string.char(proxy.COM_QUERY) .. parser:rewrite())
-				end
-			elseif choosed_count > 0 then
+			elseif choosed_count > 1 then
 				proxy.connection.backend_ndx = 0
 				proxy.response = {
 						type = proxy.MYSQLD_PACKET_ERR,	
