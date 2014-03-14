@@ -23,7 +23,7 @@ if proxy.global.config.table_server_mapping == nil then
 		my_test1_0="data1",
 		my_test1_1="data1",
 		my_test1_2="data1",
-		my_test1_3="data1",
+		my_test1_3="default",
 		my_test2_0="data1",
 		my_test2_1="data1",
 		my_test2_2="data1",
@@ -53,7 +53,7 @@ if proxy.global.config.table_partition_mapping == nil then
                                 { name="my_test1_0", server="data1", minval=nil,    maxval=100000},
                                 { name="my_test1_1", server="data1", minval=100000, maxval=200000},
                                 { name="my_test1_2", server="data1", minval=200000, maxval=300000},
-                                { name="my_test1_3", server="data1", minval=300000, maxval=nil}
+                                { name="my_test1_3", server="default", minval=300000, maxval=nil}
                         }
                 },
                 my_test2={
@@ -249,21 +249,23 @@ function choose_server_by_parser()
 				end
 				if choosed_count > 0 and (first_token == "select" or choosed_count == 1) then
 					choosed_count = 1	
-					for key_indexes_v1, key_indexes_v2 in pairs(part_key_indexes) do
-						part_key_index = key_indexes_v2
-						if partitions[part_key_index].name then
-							parser:rename(tndx, partitions[part_key_index].name)
-						end
-						if partitions[part_key_index].server then
-							choosed_backend = choose_server_group(partitions[part_key_index].server)
-						else
-							choosed_backend = choose_server_by_table(partitions[part_key_index].name)
-						end		
-						if first_token == "select" then
-							proxy.queries:append(1, string.char(proxy.COM_QUERY) .. parser:rewrite(),
-										{backend_ndx=choosed_backend-1, cache_result=true})
-						else
-							proxy.queries:append(1, string.char(proxy.COM_QUERY) .. parser:rewrite())
+					for pndx = 1, #partitions do
+						part_key_index = part_key_indexes[pndx]
+						if part_key_index then 
+							if partitions[part_key_index].name then
+								parser:rename(tndx, partitions[part_key_index].name)
+							end
+							if partitions[part_key_index].server then
+								choosed_backend = choose_server_group(partitions[part_key_index].server)
+							else
+								choosed_backend = choose_server_by_table(partitions[part_key_index].name)
+							end		
+							if first_token == "select" then
+								proxy.queries:append(1, string.char(proxy.COM_QUERY) .. parser:rewrite(),
+											{backend_ndx=choosed_backend-1, cache_result=true})
+							else
+								proxy.queries:append(1, string.char(proxy.COM_QUERY) .. parser:rewrite())
+							end
 						end
 					end
 				end	
@@ -323,22 +325,24 @@ function choose_server_by_parser()
 				end
                                 if choosed_count > 0 and (first_token == "select" or choosed_count == 1) then
                                         choosed_count = 1
-                                        for key_indexes_v1, key_indexes_v2 in pairs(part_key_indexes) do
-                                                part_key_index = key_indexes_v2
-                                                if partitions[part_key_index].name then
-                                                        parser:rename(tndx, partitions[part_key_index].name)
-                                                end
-                                                if partitions[part_key_index].server then
-                                                        choosed_backend = choose_server_group(partitions[part_key_index].server)
-                                                else
-                                                        choosed_backend = choose_server_by_table(partitions[part_key_index].name)
-                                                end
-                                                if first_token == "select" then
-                                                        proxy.queries:append(1, string.char(proxy.COM_QUERY) .. parser:rewrite(),
-										{backend_ndx=choosed_backend-1, cache_result=true})
-                                                else
-                                                        proxy.queries:append(1, string.char(proxy.COM_QUERY) .. parser:rewrite())
-                                                end
+                                        for pndx = 1, #partitions do
+                                                part_key_index = part_key_indexes[pndx]
+						if part_key_index then
+	                                                if partitions[part_key_index].name then
+        	                                                parser:rename(tndx, partitions[part_key_index].name)
+                	                                end
+                        	                        if partitions[part_key_index].server then
+                                	                        choosed_backend = choose_server_group(partitions[part_key_index].server)
+                                        	        else
+                                                	        choosed_backend = choose_server_by_table(partitions[part_key_index].name)
+                                                	end
+	                                                if first_token == "select" then
+        	                                                proxy.queries:append(1, string.char(proxy.COM_QUERY) .. parser:rewrite(),
+											{backend_ndx=choosed_backend-1, cache_result=true})
+                        	                        else
+                                	                        proxy.queries:append(1, string.char(proxy.COM_QUERY) .. parser:rewrite())
+                                        	        end
+						end
                                         end
                                 end
 			elseif part["mode"] == "random" then
